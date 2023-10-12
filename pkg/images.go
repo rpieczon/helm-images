@@ -103,6 +103,12 @@ func (image *Images) GetImages() error {
 		image.log.Debug(fmt.Sprintf("fetching images from kind '%s'", currentKind))
 
 		switch currentKind {
+		case k8s.KindConfigMap:
+			cmImages, err := k8s.NewConfigMap().Get(kubeKindTemplate)
+			if err != nil {
+				return err
+			}
+			images = append(images, cmImages)
 		case k8s.KindDeployment:
 			deployImages, err := k8s.NewDeployment().Get(kubeKindTemplate)
 			if err != nil {

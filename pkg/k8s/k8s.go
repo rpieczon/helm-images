@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"fmt"
+	"strings"
 
 	thanosAlphaV1 "github.com/banzaicloud/thanos-operator/pkg/sdk/api/v1alpha1"
 	"github.com/ghodss/yaml"
@@ -24,11 +25,13 @@ const (
 	KindGrafana        = "Grafana"
 	KindThanos         = "Thanos"
 	KindThanosReceiver = "Receiver"
+	KindConfigMap      = "ConfigMap"
 	kubeKind           = "kind"
 )
 
 type (
 	Deployments  appsV1.Deployment
+	ConfigMap    coreV1.ConfigMap
 	StatefulSets appsV1.StatefulSet
 	DaemonSets   appsV1.DaemonSet
 	ReplicaSets  appsV1.ReplicaSet
@@ -80,12 +83,43 @@ func (kin *Kind) Get(dataMap string) (string, error) {
 	return "", nil
 }
 
+func (cm *ConfigMap) Get(dataMap string) (*Image, error) {
+	if err := yaml.Unmarshal([]byte(dataMap), &cm); err != nil {
+		return nil, err
+	}
+
+	cmContainers := containers{}
+	for k, v := range cm.Data {
+		if strings.Contains(strings.ToLower(k), "image") {
+			cmContainers.containers = append(cmContainers.containers, coreV1.Container{Image: v})
+		}
+	}
+
+	images := &Image{
+		Kind:  KindConfigMap,
+		Name:  cm.Name,
+		Image: cmContainers.getImages(),
+	}
+
+	return images, nil
+}
+
 func (dep *Deployments) Get(dataMap string) (*Image, error) {
 	if err := yaml.Unmarshal([]byte(dataMap), &dep); err != nil {
 		return nil, err
 	}
 
 	depContainers := containers{append(dep.Spec.Template.Spec.Containers, dep.Spec.Template.Spec.InitContainers...)}
+
+	for _, container := range dep.Spec.Template.Spec.Containers {
+		for _, ev := range container.Env {
+			println(ev.Name)
+			if strings.Contains(strings.ToLower(ev.Name), "image") {
+				depContainers.containers = append(depContainers.containers, coreV1.Container{Image: ev.Value})
+			}
+
+		}
+	}
 
 	images := &Image{
 		Kind:  KindDeployment,
@@ -326,6 +360,10 @@ func NewDeployment() ImagesInterface {
 	return &Deployments{}
 }
 
+func NewConfigMap() ImagesInterface {
+	return &ConfigMap{}
+}
+
 func NewStatefulSet() ImagesInterface {
 	return &StatefulSets{}
 }
@@ -383,7 +421,7 @@ func SupportedKinds() []string {
 		KindDeployment, KindStatefulSet, KindDaemonSet,
 		KindCronJob, KindJob, KindReplicaSet, KindPod,
 		monitoringV1.AlertmanagersKind, monitoringV1.PrometheusesKind, monitoringV1.ThanosRulerKind,
-		KindGrafana, KindThanos, KindThanosReceiver,
+		KindGrafana, KindThanos, KindThanosReceiver, KindConfigMap,
 	}
 
 	return kinds
